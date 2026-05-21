@@ -1,0 +1,10 @@
+INFO:root:server listening
+INFO:root:healthcheck ok
+INFO:root:healthcheck ok
+INFO:root:healthcheck ok
+WARNING:payments.slow_query:slow query detected after 812 ms
+ERROR:checkout:unhandled exception during checkout
+Traceback (most recent call last):
+  File "/app/checkout.py", line 42, in compute_total
+    return cart["total"]
+KeyError: 'total'

@@ -1,0 +1,11 @@
+{"timestamp":"2026-05-21T09:14:01.221Z","level":"info","message":"server listening","port":3000}
+{"timestamp":"2026-05-21T09:14:02.882Z","level":"info","message":"healthcheck ok"}
+{"timestamp":"2026-05-21T09:14:03.882Z","level":"info","message":"healthcheck ok"}
+{"timestamp":"2026-05-21T09:14:04.882Z","level":"info","message":"healthcheck ok"}
+{"timestamp":"2026-05-21T09:14:05.101Z","level":"warn","message":"slow query","ms":812,"query":"SELECT * FROM orders"}
+{"timestamp":"2026-05-21T09:14:06.440Z","level":"error","message":"unhandled rejection in /checkout"}
+TypeError: Cannot read properties of undefined (reading 'total')
+    at computeCart (/app/src/cart.js:42:18)
+    at /app/src/routes/checkout.js:17:23
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+{"timestamp":"2026-05-21T09:14:07.000Z","level":"info","message":"healthcheck ok"}

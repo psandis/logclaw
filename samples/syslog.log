@@ -1,0 +1,6 @@
+May 21 09:14:01 web-01 systemd[1]: Started Logclaw Demo API.
+May 21 09:14:02 web-01 envoy[812]: healthcheck ok
+May 21 09:14:03 web-01 envoy[812]: healthcheck ok
+May 21 09:14:04 web-01 envoy[812]: healthcheck ok
+May 21 09:14:05 web-01 kernel: WARNING: CPU: 3 PID: 4412 at tcp_send_loss_probe+0x1d2/0x220
+May 21 09:14:06 web-01 kubelet[1550]: E0521 09:14:06.440318    1550 pod_workers.go:1300] "Error syncing pod, skipping" err="failed to \"StartContainer\" for \"checkout\" with CrashLoopBackOff"

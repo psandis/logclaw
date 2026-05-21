@@ -1,0 +1,10 @@
+2026-05-21 09:14:01.221  INFO 24891 --- [main] com.example.api.Application : Started Application in 2.618 seconds (process running for 3.104)
+2026-05-21 09:14:02.882  INFO 24891 --- [nio-8080-exec-1] c.e.api.HealthController : healthcheck ok
+2026-05-21 09:14:03.882  INFO 24891 --- [nio-8080-exec-2] c.e.api.HealthController : healthcheck ok
+2026-05-21 09:14:04.882  INFO 24891 --- [nio-8080-exec-3] c.e.api.HealthController : healthcheck ok
+2026-05-21 09:14:05.101  WARN 24891 --- [nio-8080-exec-4] c.e.api.QueryService      : Slow query detected in OrderRepository.findOpenOrders (812 ms)
+2026-05-21 09:14:06.440 ERROR 24891 --- [nio-8080-exec-5] c.e.api.CheckoutService   : Unhandled exception during checkout
+java.lang.NullPointerException: Cannot invoke "java.math.BigDecimal.toString()" because "total" is null
+	at com.example.api.CheckoutService.computeTotal(CheckoutService.java:42)
+	at com.example.api.CheckoutController.checkout(CheckoutController.java:17)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)

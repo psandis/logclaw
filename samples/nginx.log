@@ -1,0 +1,6 @@
+127.0.0.1 - - [21/May/2026:09:14:01 +0000] "GET / HTTP/1.1" 200 612 "-" "curl/8.7.1"
+127.0.0.1 - - [21/May/2026:09:14:02 +0000] "GET /healthz HTTP/1.1" 200 2 "-" "kube-probe/1.30"
+127.0.0.1 - - [21/May/2026:09:14:03 +0000] "GET /healthz HTTP/1.1" 200 2 "-" "kube-probe/1.30"
+127.0.0.1 - - [21/May/2026:09:14:04 +0000] "GET /healthz HTTP/1.1" 200 2 "-" "kube-probe/1.30"
+2026/05/21 09:14:05 [warn] 12345#67890: *17 upstream response is buffered to a temporary file /var/cache/nginx/proxy_temp/1/00/0000000001 while reading upstream, client: 10.0.0.8, server: api.example.com, request: "GET /reports HTTP/1.1", upstream: "http://127.0.0.1:3000/reports", host: "api.example.com"
+2026/05/21 09:14:06 [error] 12345#67890: *18 connect() failed (111: Connection refused) while connecting to upstream, client: 10.0.0.8, server: api.example.com, request: "GET /checkout HTTP/1.1", upstream: "http://127.0.0.1:3000/checkout", host: "api.example.com"

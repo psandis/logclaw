@@ -1,0 +1,126 @@
+{
+  // Logclaw default configuration.
+  // Edit values here to change behavior — no code changes needed.
+  // This file uses JSONC (JSON with Comments). Trailing commas are not allowed.
+
+  // Detection settings.
+  // Controls how logclaw samples lines to determine the log format automatically.
+  "detection": {
+    // Number of non-empty lines sampled from the top of the input.
+    "sampleSize": 50,
+
+    // Fraction of sampled lines that must match a format to declare it detected.
+    // Below this threshold the format is reported as "unknown" and raw patterns are tried.
+    "confidenceThreshold": 0.6
+  },
+
+  // Field key mappings for structured parsers (JSON and logfmt).
+  // logclaw tries each key in order and uses the first one found in the log object.
+  // Add your app's custom field names here without touching any parser code.
+  "parsers": {
+    "fieldMappings": {
+      "level":     ["level", "lvl", "severity", "loglevel", "log_level"],
+      "message":   ["message", "msg", "text", "event"],
+      "timestamp": ["timestamp", "time", "ts", "@timestamp", "date", "datetime"]
+    }
+  },
+
+  // Raw log line patterns.
+  // Applied in order when the format is "unknown" or when lines cannot be parsed
+  // as JSON or logfmt. Each pattern uses named capture groups: timestamp, level, message.
+  // First match wins. If nothing matches, the full line becomes the message.
+  //
+  // To add support for a new framework or custom log format:
+  //   1. Add an entry below with a unique name and a valid JS regex string.
+  //   2. Use named capture groups (?<timestamp>), (?<level>), (?<message>).
+  //   3. Place more specific patterns before more generic ones.
+  "rawPatterns": [
+    {
+      "name": "apache-common",
+      "description": "Apache or nginx common access log format",
+      "example": "127.0.0.1 - - [21/May/2026:09:14:01 +0000] \"GET / HTTP/1.1\" 200 512",
+      "pattern": "^(?<remote_addr>\\S+)\\s+\\S+\\s+\\S+\\s+\\[(?<timestamp>[^\\]]+)\\]\\s+\"(?<method>[A-Z]+)\\s+(?<path>[^\\s\"]+)\\s+(?<protocol>[^\"]+)\"\\s+(?<status>\\d{3})\\s+(?<bytes>\\S+)(?:\\s+\"(?<referrer>[^\"]*)\"\\s+\"(?<user_agent>[^\"]*)\")?$"
+    },
+    {
+      "name": "spring-boot",
+      "description": "Spring Boot default Logback console format",
+      "example": "2024-05-21 14:32:15.123  INFO 12345 --- [main] com.example.App : Server started",
+      "pattern": "^(?<timestamp>\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(?<level>\\w+)\\s+\\d+\\s+---\\s+\\[.*?\\]\\s+\\S+\\s+:\\s+(?<message>.+)$"
+    },
+    {
+      "name": "laravel",
+      "description": "Laravel Monolog LineFormatter default output",
+      "example": "[2024-05-21 14:32:15] laravel.INFO: User logged in {\"user_id\":123} []",
+      "pattern": "^\\[(?<timestamp>\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2})\\]\\s+\\w+\\.(?<level>\\w+):\\s+(?<message>.+?)(?:\\s+[{\\[].*)?$"
+    },
+    {
+      "name": "python-default",
+      "description": "Python logging module default format: LEVEL:name:message",
+      "example": "ERROR:root:Database connection failed",
+      "pattern": "^(?<level>DEBUG|INFO|WARNING|ERROR|CRITICAL):(?<name>[^:]+):(?<message>.+)$"
+    },
+    {
+      "name": "nginx-error",
+      "description": "Nginx error log fixed format",
+      "example": "2024/05/21 14:32:15 [error] 12345#67890: *1 connect() failed (111: Connection refused)",
+      "pattern": "^(?<timestamp>\\d{4}/\\d{2}/\\d{2}\\s\\d{2}:\\d{2}:\\d{2})\\s+\\[(?<level>\\w+)\\]\\s+(?<message>.+)$"
+    },
+    {
+      "name": "apache-error",
+      "description": "Apache HTTP Server error log format",
+      "example": "[Fri Sep 09 10:42:29.902022 2011] [core:error] [pid 35708] AH00124: Request exceeded limit",
+      "pattern": "^\\[(?<timestamp>[A-Za-z]{3}\\s[A-Za-z]{3}\\s+\\d{1,2}\\s[\\d:.]+\\s\\d{4})\\]\\s+\\[\\w+:(?<level>\\w+)\\]\\s+(?<message>.+)$"
+    },
+    {
+      "name": "syslog-rfc3164",
+      "description": "RFC3164 syslog format",
+      "example": "May 21 09:14:01 web-01 systemd[1]: Started Logclaw Demo API.",
+      "pattern": "^(?<timestamp>[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})\\s+(?<host>\\S+)\\s+(?<tag>[^:]+):\\s+(?<message>.+)$"
+    },
+    {
+      "name": "bracket-level-iso",
+      "description": "Generic ISO or space-separated timestamp with bracket-enclosed level",
+      "example": "2024-05-21T14:32:15.123 [ERROR] Something went wrong",
+      "pattern": "^(?<timestamp>\\d{4}-\\d{2}-\\d{2}[T\\s]\\d{2}:\\d{2}:\\d{2}[.\\d]*)\\s+\\[(?<level>\\w+)\\]\\s+(?<message>.+)$"
+    },
+    {
+      "name": "level-colon-prefix",
+      "description": "Level keyword followed by colon as line prefix, no timestamp",
+      "example": "ERROR: something went wrong",
+      "pattern": "^(?<level>TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL):\\s+(?<message>.+)$"
+    }
+  ],
+
+  // Level normalization aliases.
+  // Maps raw level strings (compared case-insensitively) to canonical logclaw levels.
+  // Add new aliases for your framework here — no code changes needed.
+  "levelAliases": {
+    "trace": ["trace", "trc", "verbose"],
+    "debug": ["debug", "dbg"],
+    "info":  ["info", "inf", "information", "notice"],
+    "warn":  ["warn", "warning", "wrn"],
+    "error": ["error", "err", "fail", "failure"],
+    "fatal": ["fatal", "crit", "critical", "panic", "emerg", "alert"]
+  },
+
+  // Render settings.
+  // Controls terminal display of parsed log entries.
+  "render": {
+    // Which slice of the ISO timestamp string to show.
+    // [11, 23] produces HH:MM:SS.mmm — readable without the date clutter.
+    // Change to [0, 23] to show the full ISO timestamp.
+    "timestampSlice": [11, 23],
+
+    // Chalk color per canonical level.
+    // Supported values: gray, blue, green, yellow, red, bgRed, dim, white, cyan, magenta.
+    "levelColors": {
+      "trace":   "gray",
+      "debug":   "blue",
+      "info":    "green",
+      "warn":    "yellow",
+      "error":   "red",
+      "fatal":   "bgRed",
+      "unknown": "dim"
+    }
+  }
+}

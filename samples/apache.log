@@ -1,0 +1,6 @@
+127.0.0.1 - - [21/May/2026:09:14:01 +0000] "GET / HTTP/1.1" 200 512
+127.0.0.1 - - [21/May/2026:09:14:02 +0000] "GET /healthz HTTP/1.1" 200 16
+127.0.0.1 - - [21/May/2026:09:14:03 +0000] "GET /healthz HTTP/1.1" 200 16
+127.0.0.1 - - [21/May/2026:09:14:04 +0000] "GET /healthz HTTP/1.1" 200 16
+[Fri May 21 09:14:05.101000 2026] [mpm_event:warn] [pid 35708:tid 123145] AH00489: scoreboard is full, not at MaxRequestWorkers
+[Fri May 21 09:14:06.440000 2026] [core:error] [pid 35708:tid 123146] [client 10.0.0.8:51432] AH00124: Request exceeded the limit of 10 internal redirects due to probable configuration error.

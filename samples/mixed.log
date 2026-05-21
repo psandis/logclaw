@@ -1,0 +1,8 @@
+{"timestamp":"2026-05-21T09:14:01.221Z","level":"info","message":"server listening","port":3000}
+time=2026-05-21T09:14:02.882Z level=info msg="healthcheck ok" route=/healthz
+2026-05-21 09:14:05.101  WARN 24891 --- [nio-8080-exec-4] c.e.api.QueryService      : Slow query detected in OrderRepository.findOpenOrders (812 ms)
+[2026-05-21 09:14:06] local.ERROR: Unhandled exception during checkout {"exception":"[object] (TypeError(code: 0): Cannot read properties of undefined (reading 'total') at /var/www/app/CheckoutService.php:42)"} []
+TypeError: Cannot read properties of undefined (reading 'total')
+    at computeCart (/app/src/cart.js:42:18)
+    at /app/src/routes/checkout.js:17:23
+May 21 09:14:07 web-01 systemd[1]: Started background sync worker.
