@@ -249,6 +249,21 @@ logclaw/
 └── vitest.config.ts
 ```
 
+## Related Projects
+
+Other OpenClaw projects:
+
+- [dustclaw](https://github.com/psandis/dustclaw) - disk space analyzer and cleanup CLI
+- [dietclaw](https://github.com/psandis/dietclaw) - codebase health and dependency bloat monitor
+- [feedclaw](https://github.com/psandis/feedclaw) - RSS/Atom reader and AI digest builder
+- [wirewatch](https://github.com/psandis/wirewatch) - network traffic monitoring with AI-assisted anomaly detection
+- [driftclaw](https://github.com/psandis/driftclaw) - version drift inspection across environments
+- [speak2text](https://github.com/psandis/speak2text) - speech-to-text CLI
+- [text2speak](https://github.com/psandis/text2speak) - text-to-speech CLI
+- [asciiclaw](https://github.com/psandis/asciiclaw) - image to ASCII art terminal converter
+- [unasciiclaw](https://github.com/psandis/unasciiclaw) - ASCII art to image converter
+- [mymailclaw](https://github.com/psandis/mymailclaw) - email scanner, categorizer, and cleaner CLI
+
 ## How It Works
 
 ```
