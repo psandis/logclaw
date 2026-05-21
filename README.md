@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/logclaw?style=flat-square)](https://www.npmjs.com/package/logclaw)
 
 A Node-native log investigator for the terminal. It eats messy, half-structured
-app output — the stuff `console.log` and framework loggers actually emit — and
+app output, the stuff `console.log` and framework loggers actually emit, and
 turns it into something readable: stack traces folded into single events,
 noisy repeats collapsed, levels colorized. Plus an AI digest of what went wrong.
 
@@ -26,8 +26,8 @@ reformatting. Both are excellent and you will not out-perform them on raw speed.
 The gaps they leave:
 
 1. **Unstructured app output.** `hl` only speaks JSON and logfmt. The messy
-   reality — raw stdout, ad-hoc logger lines, multi-line Node/Java/Python stack
-   traces — is unserved. That's logclaw's primary target.
+   reality, raw stdout, ad-hoc logger lines, and multi-line Node/Java/Python stack
+   traces, is unserved. That's logclaw's primary target.
 2. **No AI, anywhere.** None of the incumbents summarize or triage. logclaw's
    `--summarize` is the headline, not a bolt-on.
 3. **No Node-native option.** Every serious tool is Rust/C++/Go. "Runs in the
@@ -318,7 +318,7 @@ TypeError: Cannot read properties of undefined (reading 'total')
 ## Notes
 
 - npm name to confirm. Backup naming if taken: `logsclaw` / `clawlog`.
-- ESM, `"type": "module"`, NodeNext resolution — relative imports use `.js`.
+- ESM, `"type": "module"`, NodeNext resolution, relative imports use `.js`.
 
 ## License
 
