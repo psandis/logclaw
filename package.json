@@ -1,7 +1,15 @@
 {
   "name": "logclaw",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Node-native log investigator: eats messy unstructured app output, groups stack traces, collapses repeats, and summarizes what went wrong with AI.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/psandis/logclaw.git"
+  },
+  "homepage": "https://github.com/psandis/logclaw#readme",
+  "bugs": {
+    "url": "https://github.com/psandis/logclaw/issues"
+  },
   "type": "module",
   "bin": {
     "logclaw": "./dist/index.js",

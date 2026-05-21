@@ -1,5 +1,7 @@
 # logclaw
 
+[![npm](https://img.shields.io/npm/v/logclaw?style=flat-square)](https://www.npmjs.com/package/logclaw)
+
 A Node-native log investigator for the terminal. It eats messy, half-structured
 app output — the stuff `console.log` and framework loggers actually emit — and
 turns it into something readable: stack traces folded into single events,
