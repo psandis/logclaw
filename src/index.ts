@@ -1,17 +1,23 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import chalk from "chalk";
 
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json") as { version: string };
+
 import { loadConfig } from "./config.js";
 import { loadEnv } from "./env.js";
+import { readSource, readFile } from "./io/source.js";
 import { detectFormat } from "./parser/detect.js";
 import { parserFor } from "./parser/formats.js";
 import { LogFormat, LogLevel } from "./parser/types.js";
 import { groupMultiline } from "./transform/multiline.js";
 import { collapseRepeats } from "./transform/collapse.js";
-import { renderAll } from "./render/pretty.js";
+import { followFile } from "./transform/follow.js";
+import { renderAll, renderEntry } from "./render/pretty.js";
 import { summarize } from "./ai/summarize.js";
+import { inferFormat } from "./ai/infer.js";
 
 const VALID_FORMATS = new Set<LogFormat>([
   "json",
@@ -27,41 +33,103 @@ program
   .name("logclaw")
   .description(
     "A Node-native log investigator. Eats messy app output, groups stack " +
-      "traces, collapses repeats, and (soon) summarizes what went wrong.",
+      "traces, collapses repeats, and summarizes what went wrong.",
   )
-  .version("0.0.1")
+  .version(version)
   .argument("[file]", "log file to read; omit to read from stdin")
   .option("-l, --level <level>", "minimum level to show (trace|debug|info|warn|error|fatal)")
   .option("--format <format>", "force a format instead of auto-detect", "auto")
+  .option("-f, --follow", "watch the file for new lines and render them as they arrive")
   .option("--no-color", "disable ANSI colors")
   .option("--no-group", "disable multiline / stack-trace grouping")
   .option("--no-collapse", "disable consecutive-repeat collapsing")
   .option("--no-trace", "hide grouped stack traces in output")
-  .option("--summarize", "print an AI digest of what went wrong (stub)")
+  .option("--summarize", "print an AI digest of what went wrong")
   .option("--errors-only", "with --summarize, only feed error/fatal entries")
+  .option("--ai-detect", "use AI to infer format when auto-detection returns unknown (requires provider key)")
   .action(run);
 
 async function run(file: string | undefined, opts: OptionBag): Promise<void> {
   loadEnv();
   const config = loadConfig();
-  const source = file ? readFileSync(file, "utf8") : readStdin();
+
+  if (opts.follow) {
+    if (!file) {
+      process.stderr.write(chalk.red("--follow requires a file path; stdin is not supported.\n"));
+      process.exit(1);
+    }
+    if (!process.stdout.isTTY) {
+      process.stderr.write(chalk.yellow("warning: --follow is most useful in an interactive terminal.\n"));
+    }
+
+    // Detect format from current file content, render it, then tail from EOF.
+    const initialSource = readFile(file);
+    const initialLines = initialSource.split(/\r?\n/);
+    const format = resolveFormat(opts.format, initialLines, config);
+    const parseLine = parserFor(format, config);
+
+    const renderOpts = {
+      color: opts.color,
+      config,
+      minLevel: opts.level as LogLevel | undefined,
+      showTrace: opts.trace,
+    };
+
+    // Render existing content using the batch pipeline.
+    let initialEntries = groupMultiline(initialLines, parseLine);
+    initialEntries = collapseRepeats(initialEntries);
+    const initialOutput = renderAll(initialEntries, renderOpts);
+    if (initialOutput) process.stdout.write(initialOutput + "\n");
+
+    // Start tailing from end of current content.
+    const startOffset = Buffer.byteLength(initialSource, "utf8");
+    const startLineNo = initialLines.length + 1;
+
+    const stop = followFile(
+      file,
+      parseLine,
+      (entries) => {
+        for (const entry of entries) {
+          const line = renderEntry(entry, renderOpts);
+          if (line !== null) process.stdout.write(line + "\n");
+        }
+      },
+      { startOffset, startLineNo },
+    );
+
+    process.on("SIGINT", () => { stop(); process.exit(0); });
+    process.on("SIGTERM", () => { stop(); process.exit(0); });
+
+    // Block until signal.
+    await new Promise<never>(() => {});
+    return;
+  }
+
+  const source = readSource(file);
   const lines = source.split(/\r?\n/);
 
-  // 1. Detect (or honor forced) format.
-  const format = resolveFormat(opts.format, lines, config);
+  let format = resolveFormat(opts.format, lines, config);
+
+  if (format === "unknown" && opts.aiDetect) {
+    const inferred = await inferFormat(lines, config);
+    if (inferred) {
+      if (process.env.LOGCLAW_DEBUG) {
+        process.stderr.write(chalk.dim(`ai-inferred pattern=${inferred.name}\n`));
+      }
+      config.compiledRawPatterns.unshift(inferred);
+    }
+  }
+
   const parseLine = parserFor(format, config);
 
-  // 2. Group multiline events (stack traces) unless disabled.
   let entries = opts.group
     ? groupMultiline(lines, parseLine)
     : lines
         .filter((l) => l.trim().length > 0)
         .map((l, i) => parseLine(l, i + 1));
 
-  // 3. Collapse consecutive repeats unless disabled.
   if (opts.collapse) entries = collapseRepeats(entries);
 
-  // 4. Either summarize or render.
   if (opts.summarize) {
     const digest = await summarize(entries, { errorsOnly: opts.errorsOnly });
     process.stdout.write(digest + "\n");
@@ -97,27 +165,20 @@ function resolveFormat(
       chalk.dim(`detected format=${format} confidence=${confidence.toFixed(2)}\n`),
     );
   }
-  // TODO: when format === "unknown", offer to run the AI format-inference pass.
   return format;
-}
-
-function readStdin(): string {
-  try {
-    return readFileSync(0, "utf8");
-  } catch {
-    return "";
-  }
 }
 
 interface OptionBag {
   level?: string;
   format: string;
+  follow?: boolean;
   color: boolean;
   group: boolean;
   collapse: boolean;
   trace: boolean;
   summarize?: boolean;
   errorsOnly?: boolean;
+  aiDetect?: boolean;
 }
 
 program.parseAsync().catch((err: unknown) => {

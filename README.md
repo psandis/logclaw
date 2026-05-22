@@ -86,6 +86,9 @@ npm run dev -- samples/json.log
 | `lclaw samples/spring-boot.log --summarize` | run AI triage on a framework log sample | short root-cause summary |
 | `lclaw samples/spring-boot.log --summarize --errors-only` | summarize only failures | tighter AI output focused on error events |
 | `cat samples/json.log | lclaw` | read logs from stdin | same render pipeline without a file path |
+| `lclaw samples/json.log -f` | tail a file live | new lines rendered as they arrive |
+| `lclaw samples/mixed.log --ai-detect` | infer format with AI when detection fails | pattern applied for the session |
+| `lclaw samples/json.log.gz` | read a compressed log file | transparent gzip decompression |
 | `npm test` | run automated tests | Vitest suite result |
 | `npm run typecheck` | verify TypeScript correctness | compile check without emit |
 
@@ -134,15 +137,53 @@ lclaw [file] [options]
 
   -l, --level <level>   minimum level to show (trace|debug|info|warn|error|fatal)
       --format <fmt>    force format instead of auto-detect (json|logfmt|common|syslog)
+  -f, --follow          watch the file for new lines and render them as they arrive
       --no-color        disable ANSI colors
       --no-group        disable multiline / stack-trace grouping
       --no-collapse     disable consecutive-repeat collapsing
       --no-trace        hide grouped stack traces
       --summarize       print an AI digest of what went wrong
       --errors-only     with --summarize, only feed error/fatal entries
+      --ai-detect       use AI to infer format when auto-detection returns unknown
 ```
 
 Set `LOGCLAW_DEBUG=1` to print the detected format + confidence to stderr.
+
+### Live tail
+
+Watch a file and render new lines as they arrive:
+
+```bash
+lclaw /var/log/app.log -f
+lclaw /var/log/app.log -f --level warn
+kubectl logs -f my-pod > /tmp/pod.log && lclaw /tmp/pod.log -f
+```
+
+`--follow` requires a file path. Stack-trace grouping and repeat collapsing work the same as in batch mode, carrying state across watch callbacks.
+
+### Compressed input
+
+Pass a `.gz` file directly — logclaw decompresses it transparently:
+
+```bash
+lclaw /var/log/nginx/access.log.gz
+lclaw archive/app-2026-05-21.log.gz --level error
+cat backup.log.gz | lclaw
+```
+
+Both file and stdin paths are supported. Detection is by `.gz` extension or gzip magic bytes.
+
+### AI format inference
+
+When auto-detection returns `unknown` and you have a provider key configured, `--ai-detect` sends a sample of lines to the model and applies the inferred pattern for the session:
+
+```bash
+lclaw custom-app.log --ai-detect
+LOGCLAW_DEBUG=1 lclaw custom-app.log --ai-detect
+lclaw custom-app.log --ai-detect --summarize
+```
+
+Requires `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in your environment or `.env` file. The inferred pattern is session-only and does not modify `data/defaults.jsonc`.
 
 ## Config
 
@@ -307,13 +348,12 @@ TypeError: Cannot read properties of undefined (reading 'total')
 
 ## Roadmap
 
+- [x] `-f, --follow` live tail mode.
+- [x] Compressed input (`.gz`) — transparent decompression for files and stdin.
+- [x] `--ai-detect` format inference when auto-detection returns `unknown`.
 - [ ] Optional: route `src/ai/summarize.ts` through **psclawmcp** instead of direct provider calls.
-- [ ] AI format-inference fallback when detection returns `unknown`.
-- [ ] Dedicated `common` (Apache/nginx) and `syslog` parsers (detection exists,
-      parsers fall back to raw for now).
-- [ ] `-f, --follow` live tail mode (TTY-aware), the easy 20%.
+- [ ] Dedicated `common` (Apache/nginx) and `syslog` parsers (detection exists, parsers fall back to raw for now).
 - [ ] Register logclaw as a tool in `psclawmcp`.
-- [ ] Compressed input (`.gz`) support.
 
 ## Notes
 

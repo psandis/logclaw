@@ -20,6 +20,7 @@ export function loadEnv(): void {
       if (!match) continue;
 
       const key = match[1];
+      if (!key) continue;
       let value = match[2] ?? "";
 
       if (

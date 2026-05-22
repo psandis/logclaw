@@ -20,7 +20,7 @@ const CONTINUATION_RE = [
   /^[A-Za-z.]+(?:Error|Exception):/, // bare exception type line
 ];
 
-function isContinuation(line: string): boolean {
+export function isContinuation(line: string): boolean {
   if (line.trim().length === 0) return false;
   return CONTINUATION_RE.some((re) => re.test(line));
 }
