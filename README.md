@@ -374,4 +374,4 @@ TypeError: Cannot read properties of undefined (reading 'total')
 
 ## License
 
-MIT
+See [MIT](LICENSE)
