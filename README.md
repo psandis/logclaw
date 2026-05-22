@@ -109,7 +109,7 @@ npm run build
 
 ## Sample Fixtures
 
-Fixtures live in [`samples/`](/Users/petrisandholm/Projects/psandis-projects/logclaw/samples). Use them to verify each supported format family:
+Fixtures live in [`samples/`](samples/). Use them to verify each supported format family:
 
 | File | Format | What it proves |
 |------|--------|----------------|
@@ -199,7 +199,7 @@ Requires `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in your environment or `.env` f
 
 ## Config
 
-Default behavior is defined in [`data/defaults.jsonc`](/Users/petrisandholm/Projects/psandis-projects/logclaw/data/defaults.jsonc).
+Default behavior is defined in [`data/defaults.jsonc`](data/defaults.jsonc).
 
 It defines:
 
@@ -226,7 +226,7 @@ Editing the config file changes behavior without touching parser or renderer cod
 
 ## AI Setup
 
-Create a local `.env` from [`.env.example`](/Users/petrisandholm/Projects/psandis-projects/logclaw/.env.example) to enable `--summarize`.
+Create a local `.env` from [`.env.example`](.env.example) to enable `--summarize`.
 
 Supported variables:
 
