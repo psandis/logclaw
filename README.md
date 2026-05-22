@@ -43,54 +43,69 @@ It wins on handling the mess and on the AI investigator.
 ## Install
 
 ```bash
-npm install
-npm run build
+npm install -g logclaw
 ```
+
+Both `logclaw` and `lclaw` are available after install.
 
 ## Quick Start
 
 ```bash
-npm start -- samples/json.log
-lclaw samples/json.log
-```
-
-Run other formats:
-
-```bash
-node dist/index.js samples/logfmt.log
-node dist/index.js samples/spring-boot.log
-node dist/index.js samples/syslog.log
-OPENAI_API_KEY=... node dist/index.js samples/spring-boot.log --summarize
+logclaw /var/log/app.log
+lclaw /var/log/app.log --level warn
 ```
 
 Read from stdin:
 
 ```bash
-cat samples/json.log | npm run dev
-kubectl logs my-pod | npm run dev -- --level warn
+cat /var/log/nginx/access.log | logclaw
+kubectl logs my-pod | logclaw --level error
+docker logs my-container | logclaw --summarize
 ```
 
-Development from source:
+Live tail:
 
 ```bash
+logclaw /var/log/app.log -f
+logclaw /var/log/app.log -f --level warn
+```
+
+Compressed files:
+
+```bash
+logclaw /var/log/app.log.gz
+logclaw archive/app-2026-05-21.log.gz --level error
+```
+
+## Development
+
+Clone and run from source:
+
+```bash
+git clone https://github.com/psandis/logclaw.git
+cd logclaw
+npm install
 npm run dev -- samples/json.log
+npm run dev -- samples/spring-boot.log
+npm test
+npm run build
 ```
 
 ## Quick Commands
 
 | Command | Purpose | Result |
 |---------|---------|--------|
-| `lclaw samples/json.log` | parse the default JSON fixture | readable terminal output with grouping and repeat collapsing |
-| `lclaw samples/logfmt.log` | parse logfmt fixture | key/value fields rendered inline |
-| `lclaw samples/syslog.log` | parse syslog fixture | regex-driven normalization of syslog-style lines |
-| `lclaw samples/spring-boot.log --summarize` | run AI triage on a framework log sample | short root-cause summary |
-| `lclaw samples/spring-boot.log --summarize --errors-only` | summarize only failures | tighter AI output focused on error events |
-| `cat samples/json.log | lclaw` | read logs from stdin | same render pipeline without a file path |
-| `lclaw samples/json.log -f` | tail a file live | new lines rendered as they arrive |
-| `lclaw samples/mixed.log --ai-detect` | infer format with AI when detection fails | pattern applied for the session |
-| `lclaw samples/json.log.gz` | read a compressed log file | transparent gzip decompression |
-| `npm test` | run automated tests | Vitest suite result |
-| `npm run typecheck` | verify TypeScript correctness | compile check without emit |
+| `lclaw app.log` | parse a log file | readable terminal output with grouping and repeat collapsing |
+| `lclaw app.log --level warn` | filter by minimum level | only warn, error, and fatal entries shown |
+| `lclaw app.log -f` | live tail a file | new lines rendered as they arrive |
+| `lclaw app.log.gz` | read a compressed file | transparent gzip decompression |
+| `cat app.log \| lclaw` | read from stdin | same render pipeline without a file path |
+| `kubectl logs my-pod \| lclaw --level error` | triage pod logs | errors only, stack traces grouped |
+| `lclaw app.log --summarize` | AI triage | short plain-text root-cause summary |
+| `lclaw app.log --summarize --errors-only` | AI triage on failures only | tighter digest focused on error events |
+| `lclaw app.log --ai-detect` | infer unknown format with AI | pattern applied for the session |
+| `npm test` | run automated tests (dev) | Vitest suite result |
+| `npm run typecheck` | verify TypeScript correctness (dev) | compile check without emit |
 
 ## Sample Fixtures
 
@@ -108,26 +123,23 @@ Fixtures live in [`samples/`](/Users/petrisandholm/Projects/psandis-projects/log
 | `python.log` | Python logging | regex-driven raw parsing and traceback grouping |
 | `mixed.log` | mixed formats | fallback behavior when one file mixes multiple styles |
 
-Run them directly:
+Run them from the cloned repo:
 
 ```bash
-node dist/index.js samples/json.log
-node dist/index.js samples/logfmt.log
-node dist/index.js samples/apache.log
-node dist/index.js samples/syslog.log
+npm run dev -- samples/json.log
+npm run dev -- samples/logfmt.log
+npm run dev -- samples/apache.log
+npm run dev -- samples/syslog.log
 ```
 
-## Scripts
+## Development Scripts
 
 | Script | What it does |
 |--------|--------------|
-| `npm run dev -- <file>` | run from source through `tsx` |
+| `npm run dev -- <file>` | run from source through `tsx` (no build needed) |
 | `npm run build` | compile TypeScript to `dist/` |
-| `npm start -- <file>` | run the built CLI from `dist/index.js` |
 | `npm test` | run the Vitest suite |
-| `npm run typecheck` | run TypeScript compile checks without emitting |
-
-After build, both `logclaw` and `lclaw` point to the same CLI.
+| `npm run typecheck` | TypeScript compile check without emitting |
 
 ## Usage
 
