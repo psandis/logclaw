@@ -1,6 +1,7 @@
 import { openSync, readSync, closeSync, watchFile, unwatchFile } from "node:fs";
+import { ContinuationRules } from "../config.js";
 import { LogEntry } from "../parser/types.js";
-import { isContinuation } from "./multiline.js";
+import { appendContinuation, isContinuation } from "./multiline.js";
 
 // ---------------------------------------------------------------------------
 // Stateful incremental processing for --follow mode. Each watch callback
@@ -21,7 +22,12 @@ export interface FollowContext {
 }
 
 export interface FollowOptions {
-  interval?: number;
+  /** Poll interval in milliseconds (config.follow.pollIntervalMs). */
+  intervalMs: number;
+  /** Continuation rules (config.continuation). */
+  continuation: ContinuationRules;
+  /** Lines to drop, such as headers (config.compiledSkipPatterns). */
+  skip: readonly RegExp[];
   startOffset?: number;
   startLineNo?: number;
 }
@@ -40,21 +46,23 @@ export function followFile(
   path: string,
   parseLine: (line: string, lineNo: number) => LogEntry,
   onEntries: (entries: LogEntry[]) => void,
-  options: FollowOptions = {},
+  options: FollowOptions,
 ): () => void {
   const ctx = createFollowContext(options.startOffset ?? 0, options.startLineNo ?? 1);
 
   function tick(): void {
-    const lines = readNewLines(path, ctx);
+    const lines = readNewLines(path, ctx).filter(
+      (line) => !options.skip.some((re) => re.test(line)),
+    );
     if (lines.length === 0) return;
-    const entries = processLines(lines, ctx, parseLine);
+    const entries = processLines(lines, ctx, parseLine, options.continuation);
     if (entries.length > 0) onEntries(entries);
   }
 
   // Process any content already in the file (or skip if startOffset is at EOF).
   tick();
 
-  watchFile(path, { interval: options.interval ?? 250 }, tick);
+  watchFile(path, { interval: options.intervalMs }, tick);
 
   return () => {
     unwatchFile(path);
@@ -90,14 +98,13 @@ export function processLines(
   lines: string[],
   ctx: FollowContext,
   parseLine: (line: string, lineNo: number) => LogEntry,
+  continuation: ContinuationRules,
 ): LogEntry[] {
   const out: LogEntry[] = [];
 
   for (const line of lines) {
-    if (ctx.openEntry && isContinuation(line)) {
-      ctx.openEntry.raw += "\n" + line;
-      const existing = (ctx.openEntry.fields.trace as string | undefined) ?? "";
-      ctx.openEntry.fields.trace = existing ? existing + "\n" + line : line;
+    if (ctx.openEntry && isContinuation(line, continuation, ctx.openEntry)) {
+      appendContinuation(ctx.openEntry, line);
       continue;
     }
 

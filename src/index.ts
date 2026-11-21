@@ -6,12 +6,12 @@ import chalk from "chalk";
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
 
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveConfigFiles, RuntimeLogclawConfig } from "./config.js";
 import { loadEnv } from "./env.js";
 import { readSource, readFile } from "./io/source.js";
-import { detectFormat } from "./parser/detect.js";
-import { parserFor } from "./parser/formats.js";
-import { LogFormat, LogLevel } from "./parser/types.js";
+import { detectFormat, headLines } from "./parser/detect.js";
+import { isRawParsable, parserFor } from "./parser/formats.js";
+import { LOG_FORMATS, LogFormat, LogLevel } from "./parser/types.js";
 import { groupMultiline } from "./transform/multiline.js";
 import { collapseRepeats } from "./transform/collapse.js";
 import { followFile } from "./transform/follow.js";
@@ -19,13 +19,7 @@ import { renderAll, renderEntry } from "./render/pretty.js";
 import { summarize } from "./ai/summarize.js";
 import { inferFormat } from "./ai/infer.js";
 
-const VALID_FORMATS = new Set<LogFormat>([
-  "json",
-  "logfmt",
-  "common",
-  "syslog",
-  "unknown",
-]);
+const VALID_FORMATS = new Set<string>(LOG_FORMATS);
 
 const program = new Command();
 
@@ -38,7 +32,8 @@ program
   .version(version)
   .argument("[file]", "log file to read; omit to read from stdin")
   .option("-l, --level <level>", "minimum level to show (trace|debug|info|warn|error|fatal)")
-  .option("--format <format>", "force a format instead of auto-detect", "auto")
+  .option("--format <format>", `force a format instead of auto-detect (${LOG_FORMATS.join("|")})`, "auto")
+  .option("--config <path>", "extra config file merged on top of the defaults and user config")
   .option("-f, --follow", "watch the file for new lines and render them as they arrive")
   .option("--no-color", "disable ANSI colors")
   .option("--no-group", "disable multiline / stack-trace grouping")
@@ -51,7 +46,11 @@ program
 
 async function run(file: string | undefined, opts: OptionBag): Promise<void> {
   loadEnv();
-  const config = loadConfig();
+  const config = loadConfig(resolveConfigFiles(opts.config));
+  if (process.env.LOGCLAW_DEBUG) {
+    process.stderr.write(chalk.dim(`config files: ${config.sources.join(", ")}\n`));
+  }
+  const continuation = config.continuation;
 
   if (opts.follow) {
     if (!file) {
@@ -64,8 +63,9 @@ async function run(file: string | undefined, opts: OptionBag): Promise<void> {
 
     // Detect format from current file content, render it, then tail from EOF.
     const initialSource = readFile(file);
-    const initialLines = initialSource.split(/\r?\n/);
+    const initialLines = blankSkippedLines(initialSource.split(/\r?\n/), config);
     const format = resolveFormat(opts.format, initialLines, config);
+    warnIfUnknown(format, initialLines, config);
     const parseLine = parserFor(format, config);
 
     const renderOpts = {
@@ -76,7 +76,7 @@ async function run(file: string | undefined, opts: OptionBag): Promise<void> {
     };
 
     // Render existing content using the batch pipeline.
-    let initialEntries = groupMultiline(initialLines, parseLine);
+    let initialEntries = groupMultiline(initialLines, parseLine, continuation);
     initialEntries = collapseRepeats(initialEntries);
     const initialOutput = renderAll(initialEntries, renderOpts);
     if (initialOutput) process.stdout.write(initialOutput + "\n");
@@ -94,7 +94,13 @@ async function run(file: string | undefined, opts: OptionBag): Promise<void> {
           if (line !== null) process.stdout.write(line + "\n");
         }
       },
-      { startOffset, startLineNo },
+      {
+        intervalMs: config.follow.pollIntervalMs,
+        continuation,
+        skip: config.compiledSkipPatterns,
+        startOffset,
+        startLineNo,
+      },
     );
 
     process.on("SIGINT", () => { stop(); process.exit(0); });
@@ -105,8 +111,22 @@ async function run(file: string | undefined, opts: OptionBag): Promise<void> {
     return;
   }
 
-  const source = readSource(file);
-  const lines = source.split(/\r?\n/);
+  // No file and nothing piped in: stdin is the terminal, so there is no input.
+  if (!file && process.stdin.isTTY) {
+    process.stderr.write(
+      chalk.red("error: no input. Pass a log file, or pipe logs in (cat app.log | logclaw).\n\n"),
+    );
+    program.outputHelp({ error: true });
+    process.exit(1);
+  }
+
+  const source = await readSource(file);
+  const lines = blankSkippedLines(source.split(/\r?\n/), config);
+
+  if (lines.every((line) => line.trim().length === 0)) {
+    process.stderr.write(chalk.yellow(`warning: ${file ?? "stdin"} has no log lines.\n`));
+    return;
+  }
 
   let format = resolveFormat(opts.format, lines, config);
 
@@ -117,21 +137,23 @@ async function run(file: string | undefined, opts: OptionBag): Promise<void> {
         process.stderr.write(chalk.dim(`ai-inferred pattern=${inferred.name}\n`));
       }
       config.compiledRawPatterns.unshift(inferred);
+      format = "raw";
     }
   }
 
+  warnIfUnknown(format, lines, config);
+
   const parseLine = parserFor(format, config);
 
+  // Line numbers are 1-based positions in the source, including blank lines.
   let entries = opts.group
-    ? groupMultiline(lines, parseLine)
-    : lines
-        .filter((l) => l.trim().length > 0)
-        .map((l, i) => parseLine(l, i + 1));
+    ? groupMultiline(lines, parseLine, continuation)
+    : lines.flatMap((l, i) => (l.trim().length > 0 ? [parseLine(l, i + 1)] : []));
 
   if (opts.collapse) entries = collapseRepeats(entries);
 
   if (opts.summarize) {
-    const digest = await summarize(entries, { errorsOnly: opts.errorsOnly });
+    const digest = await summarize(entries, config, { errorsOnly: opts.errorsOnly });
     process.stdout.write(digest + "\n");
     return;
   }
@@ -145,10 +167,34 @@ async function run(file: string | undefined, opts: OptionBag): Promise<void> {
   process.stdout.write(output + "\n");
 }
 
+/**
+ * Replace lines matching config.input.skipPatterns (such as column headers) with
+ * empty strings. Blank lines are ignored everywhere, and line numbers stay correct.
+ */
+function blankSkippedLines(lines: string[], config: RuntimeLogclawConfig): string[] {
+  const skip = config.compiledSkipPatterns;
+  if (skip.length === 0) return lines;
+  return lines.map((line) => (skip.some((re) => re.test(line)) ? "" : line));
+}
+
+/** Tell the user when no format matched, instead of silently showing raw lines. */
+function warnIfUnknown(format: LogFormat, lines: string[], config: RuntimeLogclawConfig): void {
+  if (format !== "unknown") return;
+  const sample = headLines(lines, config);
+  const matched = sample.filter((l) => isRawParsable(l, config)).length;
+  process.stderr.write(
+    chalk.yellow(
+      `warning: no log format matched most lines (${matched} of ${sample.length} sampled entries ` +
+        "matched a rawPatterns entry). Unmatched lines are shown as-is.\n" +
+        "         Add a rawPatterns entry to your config (see README, Configuration) or try --ai-detect.\n",
+    ),
+  );
+}
+
 function resolveFormat(
   requested: string,
   lines: string[],
-  config: ReturnType<typeof loadConfig>,
+  config: RuntimeLogclawConfig,
 ): LogFormat {
   if (requested && requested !== "auto") {
     if (!VALID_FORMATS.has(requested as LogFormat)) {
@@ -171,6 +217,7 @@ function resolveFormat(
 interface OptionBag {
   level?: string;
   format: string;
+  config?: string;
   follow?: boolean;
   color: boolean;
   group: boolean;

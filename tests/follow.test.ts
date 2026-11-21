@@ -14,6 +14,7 @@ import {
 
 const config = loadConfig();
 const parseLine = parserFor("json", config);
+const continuation = config.continuation;
 
 function tmpLog(): string {
   return join(tmpdir(), `logclaw-follow-${Date.now()}-${Math.random().toString(36).slice(2)}.log`);
@@ -57,7 +58,7 @@ describe("processLines", () => {
       '{"level":"error","message":"boom"}',
       "    at doThing (app.js:10:5)",
     ];
-    const entries = processLines(lines, ctx, parseLine);
+    const entries = processLines(lines, ctx, parseLine, continuation);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.level).toBe("error");
@@ -66,9 +67,10 @@ describe("processLines", () => {
 
   it("collapses repeated entries and increments the count across batches", () => {
     const ctx = createFollowContext();
-    const batch1 = processLines(['{"level":"info","message":"ping"}'], ctx, parseLine);
-    const batch2 = processLines(['{"level":"info","message":"ping"}'], ctx, parseLine);
-    const batch3 = processLines(['{"level":"info","message":"ping"}'], ctx, parseLine);
+    const ping = ['{"level":"info","message":"ping"}'];
+    const batch1 = processLines(ping, ctx, parseLine, continuation);
+    const batch2 = processLines(ping, ctx, parseLine, continuation);
+    const batch3 = processLines(ping, ctx, parseLine, continuation);
 
     expect(batch1[0]?.repeatCount).toBeUndefined();
     expect(batch2[0]?.repeatCount).toBe(2);
@@ -105,7 +107,7 @@ describe("followFile integration", () => {
             resolve();
           }
         },
-        { interval: 100 },
+        { intervalMs: 100, continuation, skip: config.compiledSkipPatterns },
       );
 
       setTimeout(() => {

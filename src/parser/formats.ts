@@ -1,10 +1,11 @@
 import { RuntimeLogclawConfig } from "../config.js";
-import { LogEntry, LogFormat, normalizeLevel } from "./types.js";
+import { LogEntry, LogFormat, LogLevel, normalizeLevel } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Each parser takes a single source line + its line number and returns a
 // normalized LogEntry. They assume the format has already been detected;
-// detect.ts is responsible for choosing which one to run.
+// detect.ts is responsible for choosing which one to run. Field names,
+// timestamp formats, raw patterns and level words all come from config.
 // ---------------------------------------------------------------------------
 
 function pick(obj: Record<string, unknown>, keys: string[]): unknown {
@@ -14,105 +15,87 @@ function pick(obj: Record<string, unknown>, keys: string[]): unknown {
   return undefined;
 }
 
-function coerceDate(value: unknown): Date | undefined {
+/** A parsed timestamp plus the UTC offset written in the source, if any. */
+interface ParsedTime {
+  date: Date;
+  offset?: number;
+}
+
+/** Timestamp fields for a LogEntry. */
+function timeFields(value: unknown, config: RuntimeLogclawConfig): Pick<LogEntry, "timestamp" | "timestampOffset"> {
+  const parsed = coerceDate(value, config);
+  if (!parsed) return { timestamp: undefined };
+  return parsed.offset === undefined
+    ? { timestamp: parsed.date }
+    : { timestamp: parsed.date, timestampOffset: parsed.offset };
+}
+
+function coerceDate(value: unknown, config: RuntimeLogclawConfig): ParsedTime | undefined {
   if (value == null) return undefined;
   if (typeof value === "number") {
-    // Heuristic: seconds vs milliseconds.
-    const ms = value < 1e12 ? value * 1000 : value;
+    // Seconds vs milliseconds, decided by config.parsers.epochMillisThreshold.
+    const ms = value < config.parsers.epochMillisThreshold ? value * 1000 : value;
     const d = new Date(ms);
-    return isNaN(d.getTime()) ? undefined : d;
+    return isNaN(d.getTime()) ? undefined : { date: d };
   }
   if (typeof value === "string") {
-    const parsed = parseTimestampString(value);
-    if (parsed) return parsed;
+    return parseTimestampString(value, config);
   }
   return undefined;
 }
 
-function parseTimestampString(value: string): Date | undefined {
-  const isoNaive = value.match(
-    /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})[T\s](?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.(?<ms>\d{1,3}))?$/,
-  );
-  if (isoNaive?.groups) {
-    return utcDateFromParts(isoNaive.groups);
-  }
-
-  const slashNaive = value.match(
-    /^(?<year>\d{4})\/(?<month>\d{2})\/(?<day>\d{2})\s(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})$/,
-  );
-  if (slashNaive?.groups) {
-    return utcDateFromParts(slashNaive.groups);
-  }
-
-  const common = value.match(
-    /^(?<day>\d{2})\/(?<month>[A-Za-z]{3})\/(?<year>\d{4}):(?<time>\d{2}:\d{2}:\d{2})\s+(?<offset>[+-]\d{4})$/,
-  );
-  if (common?.groups) {
-    const time = common.groups.time;
-    const monthName = common.groups.month;
-    const offset = common.groups.offset;
-    if (!time || !monthName || !offset) return undefined;
-
-    const [hour, minute, second] = time.split(":").map(Number);
-    const month = monthIndex(monthName);
-    if (month !== undefined) {
-      const utc = Date.UTC(
-        Number(common.groups.year),
-        month,
-        Number(common.groups.day),
-        hour,
-        minute,
-        second,
-      );
-      return new Date(utc - parseOffsetMinutes(offset) * 60_000);
-    }
-  }
-
-  const apacheError = value.match(
-    /^(?:[A-Za-z]{3}\s)?(?<month>[A-Za-z]{3})\s+(?<day>\d{1,2})\s+(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.(?<fraction>\d{1,6}))?\s+(?<year>\d{4})$/,
-  );
-  if (apacheError?.groups) {
-    const monthName = apacheError.groups.month;
-    if (!monthName) return undefined;
-
-    const month = monthIndex(monthName);
-    if (month !== undefined) {
-      return new Date(
-        Date.UTC(
-          Number(apacheError.groups.year),
-          month,
-          Number(apacheError.groups.day),
-          Number(apacheError.groups.hour),
-          Number(apacheError.groups.minute),
-          Number(apacheError.groups.second),
-          Number((apacheError.groups.fraction ?? "0").slice(0, 3).padEnd(3, "0")),
-        ),
-      );
-    }
-  }
-
-  const syslog = value.match(
-    /^(?<month>[A-Z][a-z]{2})\s+(?<day>\d{1,2})\s+(?<time>\d{2}:\d{2}:\d{2})$/,
-  );
-  if (syslog?.groups) {
-    const time = syslog.groups.time;
-    const monthName = syslog.groups.month;
-    if (!time || !monthName) return undefined;
-
-    const [hour, minute, second] = time.split(":").map(Number);
-    const month = monthIndex(monthName);
-    if (month !== undefined) {
-      const year = new Date().getUTCFullYear();
-      return new Date(
-        Date.UTC(year, month, Number(syslog.groups.day), hour, minute, second),
-      );
-    }
+/**
+ * Try each configured timestamp pattern in order. If none match, fall back to
+ * the JavaScript Date parser (handles ISO 8601 strings with a zone).
+ */
+function parseTimestampString(value: string, config: RuntimeLogclawConfig): ParsedTime | undefined {
+  for (const pattern of config.compiledTimestampPatterns) {
+    const groups = pattern.regex.exec(value)?.groups;
+    if (!groups) continue;
+    const parsed = dateFromGroups(groups, config);
+    if (parsed) return parsed;
   }
 
   const direct = new Date(value);
-  if (!isNaN(direct.getTime())) return direct;
+  if (!isNaN(direct.getTime())) {
+    const zone = /(Z|[+-]\d{2}(?::?\d{2})?)$/i.exec(value.trim())?.[1];
+    const offset = zone !== undefined ? parseOffsetMinutes(zone) : undefined;
+    return offset === undefined ? { date: direct } : { date: direct, offset };
+  }
 
   return undefined;
+}
+
+/** Build a date from named groups: year, month, day, hour, minute, second, fraction, offset. */
+function dateFromGroups(
+  groups: Record<string, string | undefined>,
+  config: RuntimeLogclawConfig,
+): ParsedTime | undefined {
+  // Time-only timestamps (no month and day) use today's UTC date, like a missing year.
+  const now = new Date();
+  const timeOnly = groups.month === undefined && groups.day === undefined && groups.hour !== undefined;
+  const month = timeOnly ? now.getUTCMonth() : parseMonth(groups.month, config);
+  const day = timeOnly ? String(now.getUTCDate()) : groups.day;
+  if (month === undefined || day === undefined) return undefined;
+
+  const year = groups.year !== undefined ? Number(groups.year) : now.getUTCFullYear();
+  const millis = Number((groups.fraction ?? "0").slice(0, 3).padEnd(3, "0"));
+  const offset = groups.offset !== undefined ? parseOffsetMinutes(groups.offset) : undefined;
+  if (groups.offset !== undefined && offset === undefined) return undefined;
+  const offsetMinutes = offset ?? 0;
+
+  const utc = Date.UTC(
+    year,
+    month,
+    Number(day),
+    Number(groups.hour ?? 0),
+    Number(groups.minute ?? 0),
+    Number(groups.second ?? 0),
+    millis,
+  );
+  const date = new Date(utc - offsetMinutes * 60_000);
+  if (isNaN(date.getTime())) return undefined;
+  return offset === undefined ? { date } : { date, offset };
 }
 
 export function parseJsonLine(
@@ -133,7 +116,7 @@ export function parseJsonLine(
 
   const level = normalizeLevel(asString(pick(obj, levelKeys)), config.levelAliasMap);
   const message = asString(pick(obj, messageKeys)) ?? "";
-  const timestamp = coerceDate(pick(obj, timeKeys));
+  const time = timeFields(pick(obj, timeKeys), config);
 
   // Everything not consumed above becomes an extra field.
   const consumed = new Set([...levelKeys, ...messageKeys, ...timeKeys]);
@@ -142,7 +125,7 @@ export function parseJsonLine(
     if (!consumed.has(k)) fields[k] = v;
   }
 
-  return { raw: line, lineNo, level, message, timestamp, fields };
+  return { raw: line, lineNo, level, message, ...time, fields };
 }
 
 export function parseLogfmtLine(
@@ -157,7 +140,7 @@ export function parseLogfmtLine(
 
   const level = normalizeLevel(asString(pick(fields, levelKeys)), config.levelAliasMap);
   const message = asString(pick(fields, messageKeys)) ?? line;
-  const timestamp = coerceDate(pick(fields, timeKeys));
+  const time = timeFields(pick(fields, timeKeys), config);
 
   const consumed = new Set([...levelKeys, ...messageKeys, ...timeKeys]);
   const extras: Record<string, unknown> = {};
@@ -165,10 +148,10 @@ export function parseLogfmtLine(
     if (!consumed.has(k)) extras[k] = v;
   }
 
-  return { raw: line, lineNo, level, message, timestamp, fields: extras };
+  return { raw: line, lineNo, level, message, ...time, fields: extras };
 }
 
-/** Fallback: keep the whole line as the message, sniff a level if present. */
+/** Fallback: try config.rawPatterns, else keep the whole line and sniff a level. */
 export function parseRawLine(
   line: string,
   lineNo: number,
@@ -179,8 +162,11 @@ export function parseRawLine(
     if (!match?.groups) continue;
 
     const message = match.groups.message?.trim() ?? line;
-    const timestamp = coerceDate(match.groups.timestamp);
-    const matchedLevel = normalizeLevel(match.groups.level, config.levelAliasMap);
+    const time = timeFields(match.groups.timestamp, config);
+    const rawLevel = match.groups.level?.trim();
+    const matchedLevel =
+      (rawLevel !== undefined ? pattern.levelMap?.get(rawLevel.toLowerCase()) : undefined) ??
+      normalizeLevel(rawLevel, config.levelAliasMap);
     const level = matchedLevel === "unknown" ? sniffLevel(message, config) : matchedLevel;
     const fields = Object.fromEntries(
       Object.entries(match.groups).filter(
@@ -197,8 +183,9 @@ export function parseRawLine(
       lineNo,
       level,
       message,
-      timestamp,
+      ...time,
       fields,
+      pattern: pattern.name,
     };
   }
 
@@ -209,6 +196,11 @@ export function parseRawLine(
     message: line,
     fields: {},
   };
+}
+
+/** True when any rawPatterns entry (including the generic fallback entries) matches the line. */
+export function isRawParsable(line: string, config: RuntimeLogclawConfig): boolean {
+  return config.compiledRawPatterns.some((p) => p.regex.test(line));
 }
 
 export function parserFor(
@@ -234,7 +226,10 @@ function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : String(v);
 }
 
-/** Minimal logfmt: key=value, key="quoted value", bare tokens ignored. */
+/**
+ * Minimal logfmt: key=value, key="quoted value", bare tokens ignored.
+ * This regex is the logfmt syntax itself, not a tunable setting.
+ */
 export function parseLogfmtPairs(line: string): Record<string, string> {
   const out: Record<string, string> = {};
   const re = /(\w[\w.\-]*)=(?:"((?:[^"\\]|\\.)*)"|(\S+))/g;
@@ -247,48 +242,28 @@ export function parseLogfmtPairs(line: string): Record<string, string> {
   return out;
 }
 
-function sniffLevel(line: string, config: RuntimeLogclawConfig) {
-  const levelMatch = line.match(
-    /\b(TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL|PANIC)\b/i,
-  );
-  return normalizeLevel(levelMatch?.[1], config.levelAliasMap);
+function sniffLevel(line: string, config: RuntimeLogclawConfig): LogLevel {
+  const match = config.levelSniffRegex.exec(line);
+  return normalizeLevel(match?.groups?.level ?? match?.[1], config.levelAliasMap);
 }
 
-function utcDateFromParts(groups: Record<string, string>): Date {
-  return new Date(
-    Date.UTC(
-      Number(groups.year),
-      Number(groups.month) - 1,
-      Number(groups.day),
-      Number(groups.hour),
-      Number(groups.minute),
-      Number(groups.second),
-      Number((groups.ms ?? "0").slice(0, 3).padEnd(3, "0")),
-    ),
-  );
-}
-
-function monthIndex(month: string): number | undefined {
-  const index = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ].indexOf(month);
+/** Month as a 0-based index: a number (1-12) or a name from config.timestamps.monthNames. */
+function parseMonth(value: string | undefined, config: RuntimeLogclawConfig): number | undefined {
+  if (value === undefined) return undefined;
+  if (/^\d+$/.test(value)) {
+    const n = Number(value);
+    return n >= 1 && n <= 12 ? n - 1 : undefined;
+  }
+  const lower = value.toLowerCase();
+  const index = config.timestamps.monthNames.findIndex((m) => m.toLowerCase() === lower);
   return index >= 0 ? index : undefined;
 }
 
-function parseOffsetMinutes(offset: string): number {
-  const sign = offset.startsWith("-") ? -1 : 1;
-  const hours = Number(offset.slice(1, 3));
-  const minutes = Number(offset.slice(3, 5));
-  return sign * (hours * 60 + minutes);
+/** Offset in minutes from "+HH", "+HHMM", "+HH:MM" or "Z". */
+function parseOffsetMinutes(offset: string): number | undefined {
+  if (offset === "Z" || offset === "z") return 0;
+  const m = /^([+-])(\d{2})(?::?(\d{2}))?$/.exec(offset);
+  if (!m) return undefined;
+  const sign = m[1] === "-" ? -1 : 1;
+  return sign * (Number(m[2]) * 60 + Number(m[3] ?? 0));
 }

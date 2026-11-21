@@ -1,28 +1,32 @@
+import { ContinuationRules } from "../config.js";
 import { LogEntry } from "../parser/types.js";
 
 // ---------------------------------------------------------------------------
-// Multiline grouping. A Node/Java/Python stack trace is conceptually ONE event
-// spread across many lines. Naive log tools shred them. We detect continuation
-// lines (indented, "at ...", "Caused by:", "...", bare exception frames) and
-// fold them into the preceding entry's raw + message.
-//
-// Heuristic, not perfect — but this is exactly the case hl (JSON/logfmt only)
-// does not handle, so it's worth getting reasonably right.
+// Multiline grouping. A Node/Java/Python stack trace, or a multi-line message
+// in a timestamped log, is ONE event spread across many lines. A line is a
+// continuation when it matches a global pattern (multiline.continuationPatterns)
+// or the continuationPattern of the rawPatterns entry that parsed the previous
+// entry. Continuation lines are folded into that entry's raw text and its
+// "trace" field.
 // ---------------------------------------------------------------------------
 
-const CONTINUATION_RE = [
-  /^\s+/, // leading whitespace (indented frame)
-  /^\s*at\s+/, // Java/Node: "at Object.<anonymous> (...)"
-  /^\s*Caused by:/, // Java chained exceptions
-  /^\s*\.\.\.\s+\d+\s+more/, // Java "... 12 more"
-  /^\s*File ".*", line \d+/, // Python traceback frame
-  /^\s*Traceback \(most recent call last\)/, // Python header
-  /^[A-Za-z.]+(?:Error|Exception):/, // bare exception type line
-];
-
-export function isContinuation(line: string): boolean {
+export function isContinuation(
+  line: string,
+  rules: ContinuationRules,
+  previous?: LogEntry,
+): boolean {
   if (line.trim().length === 0) return false;
-  return CONTINUATION_RE.some((re) => re.test(line));
+  if (rules.patterns.some((re) => re.test(line))) return true;
+  const own = previous?.pattern !== undefined ? rules.byPattern.get(previous.pattern) : undefined;
+  return own !== undefined && own.test(line);
+}
+
+/** Append a continuation line to an entry. */
+export function appendContinuation(entry: LogEntry, line: string): void {
+  entry.raw += "\n" + line;
+  // Keep the headline message short; stash the extra lines as a field.
+  const existing = (entry.fields.trace as string | undefined) ?? "";
+  entry.fields.trace = existing ? existing + "\n" + line : line;
 }
 
 /**
@@ -33,6 +37,7 @@ export function isContinuation(line: string): boolean {
 export function groupMultiline(
   lines: string[],
   parseLine: (line: string, lineNo: number) => LogEntry,
+  rules: ContinuationRules,
 ): LogEntry[] {
   const entries: LogEntry[] = [];
 
@@ -41,11 +46,8 @@ export function groupMultiline(
     if (line.trim().length === 0) continue;
 
     const prev = entries[entries.length - 1];
-    if (prev && isContinuation(line)) {
-      prev.raw += "\n" + line;
-      // Keep the headline message short; stash the trace as a field.
-      const existing = (prev.fields.trace as string | undefined) ?? "";
-      prev.fields.trace = existing ? existing + "\n" + line : line;
+    if (prev && isContinuation(line, rules, prev)) {
+      appendContinuation(prev, line);
       continue;
     }
 

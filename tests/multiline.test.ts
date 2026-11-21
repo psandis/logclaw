@@ -16,7 +16,11 @@ describe("groupMultiline", () => {
       "INFO healthcheck ok",
     ];
 
-    const entries = groupMultiline(lines, (line, lineNo) => parseRawLine(line, lineNo, config));
+    const entries = groupMultiline(
+      lines,
+      (line, lineNo) => parseRawLine(line, lineNo, config),
+      config.continuation,
+    );
 
     expect(entries).toHaveLength(2);
     expect(entries[0]?.level).toBe("error");
@@ -34,6 +38,37 @@ describe("groupMultiline", () => {
     const entries = groupMultiline(
       ["ERROR boom", "", "INFO ok"],
       (line, lineNo) => parseRawLine(line, lineNo, config),
+      config.continuation,
+    );
+    expect(entries).toHaveLength(2);
+  });
+
+  it("folds multi-line messages using the parsing pattern's continuationPattern", () => {
+    const lines = [
+      "2026-11-21 11:25:08.052436+0100 0x2a1230   Default     0x0                  0      0    kernel: tcp_connection_summary",
+      "so_gencnt: 1940650 t_state: FIN_WAIT_1",
+      "rtt: 12.781 ms rttvar: 3.187 ms",
+      "2026-11-21 11:25:09.000000+0100 0x2a1230   Error       0x0                  0      0    kernel: next entry",
+    ];
+    const entries = groupMultiline(
+      lines,
+      (line, lineNo) => parseRawLine(line, lineNo, config),
+      config.continuation,
+    );
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.pattern).toBe("macos-unified");
+    expect(entries[0]?.fields.trace).toBe(
+      "so_gencnt: 1940650 t_state: FIN_WAIT_1\nrtt: 12.781 ms rttvar: 3.187 ms",
+    );
+    expect(entries[1]?.level).toBe("error");
+  });
+
+  it("does not apply a pattern's continuationPattern to entries from other patterns", () => {
+    const entries = groupMultiline(
+      ["ERROR: boom", "so_gencnt: 1940650"],
+      (line, lineNo) => parseRawLine(line, lineNo, config),
+      config.continuation,
     );
     expect(entries).toHaveLength(2);
   });

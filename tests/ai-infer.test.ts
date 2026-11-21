@@ -1,17 +1,31 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadConfig } from "../src/config.js";
 import { inferFormat } from "../src/ai/infer.js";
 
 const config = loadConfig();
 
+function clearAiEnv(): void {
+  for (const name of [
+    "LOGCLAW_AI_PROVIDER",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_API_KEY",
+    "ANTHROPIC_MODEL",
+    "CLAUDE_MODEL",
+  ]) {
+    delete process.env[name];
+  }
+}
+
 describe("inferFormat", () => {
+  // Clear before as well as after, so a real key in the shell never reaches a test.
+  beforeEach(clearAiEnv);
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.CLAUDE_API_KEY;
-    delete process.env.LOGCLAW_AI_PROVIDER;
+    clearAiEnv();
   });
 
   it("returns null when no provider key is configured", async () => {

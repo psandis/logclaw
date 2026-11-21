@@ -69,10 +69,39 @@ describe("parseLogfmtLine", () => {
 });
 
 describe("parseRawLine", () => {
-  it("sniffs level from unstructured lines", () => {
+  it("extracts timestamp and level from unstructured lines with the fallback", () => {
     const entry = parseRawLine("2026-05-21 09:14:06 ERROR checkout failed", 3, config);
     expect(entry.level).toBe("error");
-    expect(entry.message).toBe("2026-05-21 09:14:06 ERROR checkout failed");
+    expect(entry.message).toBe("checkout failed");
+    expect(entry.timestamp?.toISOString()).toBe("2026-05-21T09:14:06.000Z");
+  });
+
+  it.each([
+    ["[2026-08-13 05:59:53.551] [info]  [AppUpdater] Checking for updates", "info", "[AppUpdater] Checking for updates", "05:59:53.551"],
+    ["2026-11-21 09:49:54.363882 (gui/501/app [52067]) <Notice>: job state = exited", "info", "job state = exited", "09:49:54.363"],
+    ["2026-01-16 11:27:21,684 [      5]   INFO - #c.i.p.AppStarter - IDE STARTED", "info", "#c.i.p.AppStarter - IDE STARTED", "11:27:21.684"],
+    ["[2025-04-14T11:29:36.381Z] (blob-extension:69370) <INFO> Loading SSL Settings", "info", "Loading SSL Settings", "11:29:36.381"],
+    ["[Hotkey] 2026-01-27 20:51:52 [info] No accessibility permissions", "info", "No accessibility permissions", "20:51:52.000"],
+    ["2024-11-02 22:06:19:869|SyncServer|3500|0x7c2024000|Server|Warning| No schema plist", "warn", "No schema plist", "22:06:19.869"],
+    ["Aug 31 02:22:33 mdmclient[6702] [ERROR] [0:MDMDaemon:<0x7561>] XPC request missing entitlements", "error", "[0:MDMDaemon:<0x7561>] XPC request missing entitlements", "02:22:33.000"],
+  ])("fallback parses %s", (line, level, message, time) => {
+    const entry = parseRawLine(line, 1, config);
+    expect(entry.level).toBe(level);
+    expect(entry.message).toBe(message);
+    expect(entry.timestamp?.toISOString().slice(11, 23)).toBe(time);
+  });
+
+  it.each([
+    '{"timestamp":"2026-05-21T09:14:01.221Z","level":"info","message":"server listening","port":3000}',
+    'time=2026-05-21T09:14:02.882Z level=info msg="healthcheck ok" route=/healthz',
+  ])("never cuts a timestamp out of JSON or logfmt text: %s", (line) => {
+    // Regression: samples/mixed.log. These lines must stay intact.
+    expect(parseRawLine(line, 1, config).message).toBe(line);
+  });
+
+  it("leaves lines without timestamp or level token unchanged", () => {
+    const entry = parseRawLine("Can't open /dev/rdisk4s1: Permission denied", 1, config);
+    expect(entry.message).toBe("Can't open /dev/rdisk4s1: Permission denied");
     expect(entry.timestamp).toBeUndefined();
   });
 

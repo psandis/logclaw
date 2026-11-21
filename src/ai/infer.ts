@@ -1,61 +1,46 @@
-import { RuntimeLogclawConfig, CompiledRawPattern } from "../config.js";
+import {
+  compilePattern,
+  CompiledRawPattern,
+  RAW_PATTERN_DEFAULT_FLAGS,
+  RuntimeLogclawConfig,
+} from "../config.js";
+import { complete, fillPrompt, resolveProvider } from "./provider.js";
 
 // ---------------------------------------------------------------------------
-// AI format inference. Called when auto-detection returns "unknown" and the
-// --ai-detect flag is set. Sends a sample of lines to the configured provider
-// and asks it to identify the format or supply a named-capture-group regex.
+// AI format inference (--ai-detect). Called when auto-detection returns
+// "unknown". Sends a sample of lines to the configured provider and asks it to
+// name a known raw pattern or supply a named-capture-group regex. Sample size,
+// token limit and prompt come from config.ai.infer.
 //
 // Returns a CompiledRawPattern that is prepended to config.compiledRawPatterns
 // for the current session, or null if inference fails or no provider is set.
 // ---------------------------------------------------------------------------
 
-const INFERENCE_SAMPLE_SIZE = 20;
-
 export async function inferFormat(
   lines: string[],
   config: RuntimeLogclawConfig,
 ): Promise<CompiledRawPattern | null> {
-  const provider = resolveProvider();
+  const provider = resolveProvider(config);
   if (!provider) return null;
 
+  const settings = config.ai.infer;
   const sample = lines
     .filter((l) => l.trim().length > 0)
-    .slice(0, INFERENCE_SAMPLE_SIZE);
+    .slice(0, settings.sampleSize);
 
   if (sample.length === 0) return null;
 
-  const knownNames = config.compiledRawPatterns.map((p) => p.name);
-  const prompt = buildPrompt(sample, knownNames);
+  const prompt = fillPrompt(settings.prompt, {
+    knownFormats: config.compiledRawPatterns.map((p) => p.name).join(", "),
+    lines: sample.join("\n"),
+  });
 
   try {
-    const response =
-      provider === "openai"
-        ? await callOpenAI(prompt)
-        : await callAnthropic(prompt);
-
+    const response = await complete(provider, prompt, settings.maxTokens);
     return parseResponse(response.trim(), config);
   } catch {
     return null;
   }
-}
-
-function buildPrompt(lines: string[], knownNames: string[]): string {
-  return [
-    "You are a log format detection assistant.",
-    "Given these sample log lines, identify the format.",
-    "",
-    `If the lines match a known format (${knownNames.join(", ")}),`,
-    "respond with just that format name and nothing else.",
-    "",
-    "If the lines are a custom format, respond with a single-line JSON object:",
-    '{"name":"custom","pattern":"regex with named capture groups (?<timestamp>...) (?<level>...) (?<message>...)"}',
-    "",
-    "Rules: use named capture groups only. (?<message>...) is required. (?<timestamp>...) and (?<level>...) are optional.",
-    "If you cannot identify any pattern, respond with exactly: unknown",
-    "",
-    "Sample lines:",
-    ...lines,
-  ].join("\n");
 }
 
 function parseResponse(
@@ -74,10 +59,11 @@ function parseResponse(
     try {
       const parsed = JSON.parse(jsonMatch[0]) as { name?: string; pattern?: string };
       if (typeof parsed.pattern === "string") {
+        const name = parsed.name ?? "ai-inferred";
         return {
-          name: parsed.name ?? "ai-inferred",
+          name,
           pattern: parsed.pattern,
-          regex: new RegExp(parsed.pattern, "i"),
+          regex: compilePattern(parsed.pattern, RAW_PATTERN_DEFAULT_FLAGS, `ai-inferred "${name}"`),
         };
       }
     } catch {
@@ -86,66 +72,4 @@ function parseResponse(
   }
 
   return null;
-}
-
-type Provider = "openai" | "anthropic";
-
-function resolveProvider(): Provider | null {
-  const requested = process.env.LOGCLAW_AI_PROVIDER?.trim().toLowerCase();
-  if (requested === "openai") return process.env.OPENAI_API_KEY ? "openai" : null;
-  if (requested === "anthropic") return anthropicKey() ? "anthropic" : null;
-
-  if (process.env.OPENAI_API_KEY) return "openai";
-  if (anthropicKey()) return "anthropic";
-  return null;
-}
-
-function anthropicKey(): string | undefined {
-  return process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
-}
-
-async function callOpenAI(prompt: string): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY!;
-  const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({ model, input: prompt, max_output_tokens: 200 }),
-  });
-  if (!response.ok) throw new Error(`OpenAI API ${response.status}`);
-  const body = (await response.json()) as { output_text?: string };
-  return body.output_text?.trim() ?? "";
-}
-
-async function callAnthropic(prompt: string): Promise<string> {
-  const apiKey = anthropicKey()!;
-  const model =
-    process.env.ANTHROPIC_MODEL ||
-    process.env.CLAUDE_MODEL ||
-    "claude-sonnet-4-20250514";
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 200,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!response.ok) throw new Error(`Anthropic API ${response.status}`);
-  const body = (await response.json()) as {
-    content: Array<{ type: string; text: string }>;
-  };
-  return body.content
-    .filter((i) => i.type === "text")
-    .map((i) => i.text)
-    .join("")
-    .trim();
 }

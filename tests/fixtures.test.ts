@@ -17,7 +17,7 @@ function renderSample(name: string): string {
   const lines = source.split(/\r?\n/);
   const format = detectFormat(lines, config).format;
   const parseLine = parserFor(format, config);
-  const grouped = groupMultiline(lines, parseLine);
+  const grouped = groupMultiline(lines, parseLine, config.continuation);
   const collapsed = collapseRepeats(grouped);
 
   return renderAll(collapsed, {

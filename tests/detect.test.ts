@@ -37,9 +37,10 @@ describe("detectFormat", () => {
     expect(result.confidence).toBeGreaterThanOrEqual(0.6);
   });
 
-  it("returns unknown for mixed-format samples", () => {
+  it("detects mixed-format samples as raw when most entries match rawPatterns", () => {
+    // Stack-trace lines are not counted; most remaining entries match a rawPatterns entry.
     const result = detectFormat(readSample("mixed.log"), config);
-    expect(result.format).toBe("unknown");
-    expect(result.confidence).toBeLessThan(0.6);
+    expect(result.format).toBe("raw");
+    expect(result.confidence).toBeGreaterThanOrEqual(0.6);
   });
 });
