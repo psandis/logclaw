@@ -39,6 +39,7 @@ It wins on handling the mess and on the AI investigator.
 ## Requirements
 
 - Node 22+
+- pnpm (development only)
 
 ## Install
 
@@ -84,11 +85,11 @@ Clone and run from source:
 ```bash
 git clone https://github.com/psandis/logclaw.git
 cd logclaw
-npm install
-npm run dev -- samples/json.log
-npm run dev -- samples/spring-boot.log
-npm test
-npm run build
+pnpm install
+pnpm dev samples/json.log
+pnpm dev samples/spring-boot.log
+pnpm test
+pnpm build
 ```
 
 ## Quick Commands
@@ -104,8 +105,8 @@ npm run build
 | `lclaw app.log --summarize` | AI triage | short plain-text root-cause summary |
 | `lclaw app.log --summarize --errors-only` | AI triage on failures only | tighter digest focused on error events |
 | `lclaw app.log --ai-detect` | infer unknown format with AI | pattern applied for the session |
-| `npm test` | run automated tests (dev) | Vitest suite result |
-| `npm run typecheck` | verify TypeScript correctness (dev) | compile check without emit |
+| `pnpm test` | run automated tests (dev) | Vitest suite result |
+| `pnpm typecheck` | verify TypeScript correctness (dev) | compile check without emit |
 
 ## Sample Fixtures
 
@@ -126,20 +127,20 @@ Fixtures live in [`samples/`](samples/). Use them to verify each supported forma
 Run them from the cloned repo:
 
 ```bash
-npm run dev -- samples/json.log
-npm run dev -- samples/logfmt.log
-npm run dev -- samples/apache.log
-npm run dev -- samples/syslog.log
+pnpm dev samples/json.log
+pnpm dev samples/logfmt.log
+pnpm dev samples/apache.log
+pnpm dev samples/syslog.log
 ```
 
 ## Development Scripts
 
 | Script | What it does |
 |--------|--------------|
-| `npm run dev -- <file>` | run from source through `tsx` (no build needed) |
-| `npm run build` | compile TypeScript to `dist/` |
-| `npm test` | run the Vitest suite |
-| `npm run typecheck` | TypeScript compile check without emitting |
+| `pnpm dev <file>` | run from source through `tsx` (no build needed) |
+| `pnpm build` | compile TypeScript to `dist/` |
+| `pnpm test` | run the Vitest suite |
+| `pnpm typecheck` | TypeScript compile check without emitting |
 
 ## Usage
 
@@ -175,7 +176,7 @@ kubectl logs -f my-pod > /tmp/pod.log && lclaw /tmp/pod.log -f
 
 ### Compressed input
 
-Pass a `.gz` file directly — logclaw decompresses it transparently:
+Pass a `.gz` file directly and logclaw decompresses it transparently:
 
 ```bash
 lclaw /var/log/nginx/access.log.gz
@@ -273,6 +274,9 @@ The checkout flow is failing because the application tries to read `total` from 
 
 ```text
 logclaw/
+├── bin/
+│   ├── lclaw.js
+│   └── logclaw.js
 ├── data/
 │   └── defaults.jsonc
 ├── .env.example
@@ -289,17 +293,28 @@ logclaw/
 │   └── syslog.log
 ├── src/
 │   ├── ai/
+│   ├── io/
 │   ├── parser/
 │   ├── render/
 │   ├── transform/
+│   ├── config.ts
+│   ├── env.ts
 │   └── index.ts
 ├── tests/
+│   ├── ai-infer.test.ts
 │   ├── collapse.test.ts
 │   ├── detect.test.ts
 │   ├── fixtures.test.ts
+│   ├── follow.test.ts
 │   ├── formats.test.ts
-│   └── multiline.test.ts
+│   ├── gzip.test.ts
+│   ├── multiline.test.ts
+│   └── summarize.test.ts
+├── CHANGELOG.md
+├── LICENSE
 ├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
 ├── tsconfig.json
 └── vitest.config.ts
 ```
@@ -361,7 +376,7 @@ TypeError: Cannot read properties of undefined (reading 'total')
 ## Roadmap
 
 - [x] `-f, --follow` live tail mode.
-- [x] Compressed input (`.gz`) — transparent decompression for files and stdin.
+- [x] Compressed input (`.gz`): transparent decompression for files and stdin.
 - [x] `--ai-detect` format inference when auto-detection returns `unknown`.
 - [ ] Optional: route `src/ai/summarize.ts` through **psclawmcp** instead of direct provider calls.
 - [ ] Dedicated `common` (Apache/nginx) and `syslog` parsers (detection exists, parsers fall back to raw for now).
@@ -371,6 +386,10 @@ TypeError: Cannot read properties of undefined (reading 'total')
 
 - npm name to confirm. Backup naming if taken: `logsclaw` / `clawlog`.
 - ESM, `"type": "module"`, NodeNext resolution, relative imports use `.js`.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 

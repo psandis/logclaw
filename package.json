@@ -1,6 +1,6 @@
 {
   "name": "logclaw",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A Node-native log investigator: eats messy unstructured app output, groups stack traces, collapses repeats, and summarizes what went wrong with AI.",
   "repository": {
     "type": "git",
@@ -11,6 +11,7 @@
     "url": "https://github.com/psandis/logclaw/issues"
   },
   "type": "module",
+  "packageManager": "pnpm@12.11.2",
   "bin": {
     "logclaw": "bin/logclaw.js",
     "lclaw": "bin/lclaw.js"
@@ -41,13 +42,13 @@
   "author": "Petri",
   "license": "MIT",
   "dependencies": {
-    "chalk": "^5.3.0",
-    "commander": "^12.1.0"
+    "chalk": "^6.0.1",
+    "commander": "^15.1.0"
   },
   "devDependencies": {
-    "@types/node": "^22.7.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.8"
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
   }
 }
